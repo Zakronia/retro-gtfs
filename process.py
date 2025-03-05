@@ -59,4 +59,3 @@ elif mode in ['unfinished','u']:
 	process_trips(trip_ids)
 else:
 	print( 'Invalid mode given.' )
-

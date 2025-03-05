@@ -4,12 +4,13 @@ from conf import conf
 from shapely.wkb import loads as loadWKB
 from minor_objects import Stop, Vehicle
 
+
 # connect and establish a cursor, based on parameters in conf.py
 conn_string = (
 	"host='"+conf['db']['host']
 	+"' dbname='"+conf['db']['name']
 	+"' user='"+conf['db']['user']
-	+"' password='"+conf['db']['password']+"'"
+	+"' password='" + conf['db']['password']
 )
 connection = psycopg2.connect(conn_string)
 connection.autocommit = True
@@ -306,13 +307,13 @@ def store_timepoints(trip_id,timepoints):
 	assert len(timepoints) > 1
 	c = cursor()
 	# be sure the timepoints are in ascending temporal order
-	timepoints = sorted(timepoints,key=lambda tp: tp.arrival_time) 
+	# timepoints = sorted(timepoints,key=lambda tp: tp.arrival_time) 
 	# insert the stops
 	records = []
 	seq = 1
 	for timepoint in timepoints:
 		# list of tuples
-		records.append( (trip_id,timepoint.stop_id,timepoint.arrival_time,seq) )
+		records.append( (trip_id,timepoint.stop.id,timepoint.arrival_time,seq) )
 		seq += 1
 	args_str = ','.join( [ "({},{},{},{})".format(*x) for x in records ] )
 	c.execute("INSERT INTO {stop_times} (trip_id, stop_uid, etime, stop_sequence) VALUES ".format(**conf['db']['tables']) + args_str)

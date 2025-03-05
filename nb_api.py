@@ -1,17 +1,25 @@
 # functions involving requests to the nextbus APIs
 
-import requests, time, db, random, sys
+import requests, time, db, sys
 from requests.adapters import HTTPAdapter
-from requests.packages.urllib3.util.retry import Retry
+from urllib3 import Retry
 import threading, multiprocessing
-import xml.etree.ElementTree as ET
+import json
+from datetime import datetime
 from trip import Trip
 from os import remove, path
-from conf import conf # configuration
+from conf import API_KEY, conf # configuration
+from minor_objects import Stop, TimePoint
+import logging
+
+now = datetime.now()
+cdt = now.strftime("%Y%m%d_%H%M%S")
+logFormat = "%(levelname)s:%(name)s %(asctime)s %(message)s"
+logging.basicConfig(filename="C:\\Users\\Zach\\research\\python\\logs\\" + cdt + ".log", level=logging.DEBUG, format=logFormat)
+logger = logging.getLogger()
 
 # should we process trips (or simply store the vehicles)? default False
-doMatching = True if 'doMatching' in sys.argv else False
-getRoutes = True if 'getRoutes' in sys.argv else False
+doMatching = True
 
 # GLOBALS
 fleet = {} 			# operating vehicles in the ( fleet vid -> trip_obj )
@@ -34,16 +42,18 @@ def get_new_vehicles():
 	global last_update
 	# UNIX time the request was sent
 	request_time = time.time()
+
 	try: 
 		response = requests.get(
-			'http://webservices.nextbus.com/service/publicXMLFeed',
-			params={'command':'vehicleLocations','a':conf['agency'],'t':last_update},
+			'https://api.pugetsound.onebusaway.org/api/where/vehicles-for-agency/3.json',
+			params={'key':API_KEY},
 			headers={'Accept-Encoding':'gzip, deflate'},
 			timeout=3
 		)
 	except:
-		print ('connection problem at',time.strftime("%b %d %Y %H:%M:%S") )
+		logger.warning( msg = 'connection problem at ' )
 		return
+
 	# UNIX time the response was received
 	response_time = time.time()
 	# estimated UNIX time the server generated it's report
@@ -51,163 +61,214 @@ def get_new_vehicles():
 	server_time = (request_time + response_time) / 2
 	# list of trips to send for processing
 	ending_trips = []
-	# this is the whole big ol' parsed XML document
-	XML = ET.fromstring(response.text)
+ 
+	# parsing and storing the results
+	JSON = json.loads(response.text)
+	vehicles = JSON['data']['list']
+ 
 	# get values from the XML
-	last_update = int(XML.find('./lastTime').attrib['time'])
-	vehicles = XML.findall('.//vehicle')
+	## last_update = int(XML.find('./lastTime').attrib['time'])
+	last_update = JSON['currentTime']
+ 
 	# prevent simulataneous editing
 	with fleet_lock:
 		# check to see if there's anything we just haven't heard from at all lately
-		for vid in list(fleet.keys()):
-			# if it's been more than 3 minutes
-			if server_time - fleet[vid].last_seen > 180:
+		for vehicleID in list(fleet.keys()):
+			# if it's been more than 30 minutes
+			if server_time - fleet[vehicleID].last_seen > 1800:
 				# it has ended
-				ending_trips.append(fleet[vid])
-				del fleet[vid]
+				ending_trips.append(fleet[vehicleID])
+				del fleet[vehicleID]
+    
 		# Now, for each reported vehicle
-		for v in vehicles:
-			# if it's not predictable, it's not operating a route
-			if v.attrib['predictable'] == 'false': 
+		for vehicle in vehicles:
+			if vehicle['tripId'] == "":
 				continue
-			try: # if it has no direction, it's invalid
-				v.attrib['dirTag']
-			except: 
-				continue
-			# get values from XML
-			vid, rid, did = int(v.attrib['id']),v.attrib['routeTag'],v.attrib['dirTag']
-			lon, lat = float(v.attrib['lon']), float(v.attrib['lat'])
-			report_time = server_time - int(v.attrib['secsSinceReport'])
+
+			# get values from parsed JSON
+			vehicleID, tripID = vehicle['vehicleId'][2:], vehicle['tripId'][2:]
+			lon = float( vehicle[ 'location' ][ 'lon' ] )
+			lat = float( vehicle[ 'location' ][ 'lat' ] )
+
+			# iterate through each of the reference trips to find the one we need.
+			# not very efficient, but means we don't have to send a metric shit ton of API requests
+			trips = JSON['data']['references']['trips']
+			for trip in trips:
+				if trip['id'] == ('3_' + tripID):
+					routeID = trip['routeId'][2:]
+					blockID = trip['blockId'][2:]
+					directionID = trip['directionId']
+			report_time = vehicle['lastUpdateTime']
+
 			try: # have we seen this vehicle recently?
-				fleet[vid]
+				fleet[vehicleID]
 			except: # haven't seen it! create a new trip
-				fleet[vid] = Trip.new(next_trip_id,next_bid,did,rid,vid,report_time)
+				fleet[vehicleID] = Trip.new(tripID,blockID,directionID,routeID,vehicleID,report_time)
+				logger.info( msg = 'Created new trip ' + tripID + ' for vehicle ' + vehicleID )
 				# add this vehicle to the trip
-				fleet[vid].add_point(lon,lat,report_time)
-				# increment the trip and block counters
-				next_trip_id += 1
-				next_bid += 1
+				fleet[vehicleID].add_point(lon,lat,report_time)
 				# done with this vehicle
 				continue
 			# we have a record for this vehicle, and it's been heard from recently
 			# see if anything else has changed that makes this a new trip
-			if ( fleet[vid].route_id != rid or fleet[vid].direction_id != did ):
-				# get the block_id from the previous trip
-				last_bid = fleet[vid].block_id
+			if ( fleet[vehicleID].route_id != routeID or fleet[vehicleID].direction_id != directionID ):
 				# this trip is ending
-				ending_trips.append( fleet[vid] )
+				ending_trips.append( fleet[vehicleID] )
 				# create the new trip in it's place
-				fleet[vid] = Trip.new(next_trip_id,last_bid,did,rid,vid,report_time)
+				fleet[vehicleID] = Trip.new(tripID,blockID,directionID,routeID,vehicleID,report_time)
+				logger.info( msg = 'Created new trip ' + tripID + ' for vehicle ' + vehicleID )
 				# add this vehicle to it
-				fleet[vid].add_point(lon,lat,report_time)
+				fleet[vehicleID].add_point(lon,lat,report_time)
+    
+				closestStopID = vehicle['tripStatus']['closestStop'][2:]
+				tripDistance = vehicle['tripStatus']['distanceAlongTrip']
+				closestStopLat, closestStopLon = 0, 0
+				for stop in JSON['data']['references']['stops']:
+					if stop['id'] == closestStopID:
+						closestStopLat = stop['lat']
+						closestStopLon = stop['lon']
+
+				closestStop = Stop.new(int(closestStopID), closestStopLat, closestStopLon, report_time)
+				closestStopID = int(vehicle['tripStatus']['closestStop'][2:])
+				tripDistance = vehicle['tripStatus']['distanceAlongTrip']
+				stopOffset = vehicle['tripStatus']['closestStopTimeOffset']
+				closestStopLat, closestStopLon = 0, 0
+
+				for stop in JSON['data']['references']['stops']:
+					if stop['id'] == '3_' + str(closestStopID):
+						closestStopLat = stop['lat']
+						closestStopLon = stop['lon']
+
+				closestStop:Stop = Stop.new(closestStopID, closestStopLat, closestStopLon, report_time)
+
+				stopExists = 0
+				for timepoint in fleet[vehicleID].timepoints:
+					timepoint:TimePoint = timepoint
+					if closestStopID == int(timepoint.stop_id):
+						stopExists = 1
+						if timepoint.smallestOffset < abs(stopOffset):
+							timepoint.arrival_time = report_time + stopOffset*1000
+							timepoint.set_time(report_time + stopOffset*1000)
+							timepoint.smallestOffset = abs(stopOffset)
+							fleet[vehicleID].stops[len(fleet[vehicleID].stops)-1].report_time = report_time + stopOffset*1000
+							logging.info( msg = 'Refining time estimate for stop ' + str(closestStopID) + ' in Trip ' + str(fleet[vehicleID].trip_id) )
+						else: continue
+
+				if stopExists == 0:
+					fleet[vehicleID].timepoints.append( TimePoint.new( closestStop, tripDistance, 0, stopOffset ) )
+					fleet[vehicleID].stops.append( closestStop )
+					logger.info( msg = 'Adding Stop ' + str(closestStopID) + ' to Trip ' + str(fleet[vehicleID].trip_id) )
+				fleet[vehicleID].seq += 1
+    
 				# increment the trip counter
 				next_trip_id += 1
 			else: # not a new trip, just add the vehicle
-				fleet[vid].add_point(lon,lat,report_time)
+				if len(fleet[vehicleID].waypoints) != 0 and report_time == fleet[vehicleID].waypoints[len(fleet[vehicleID].waypoints)-1]:
+					continue
+
+				fleet[vehicleID].add_point(lon,lat,report_time)
 				# then update the time and sequence
-				fleet[vid].last_seen = report_time
-				fleet[vid].seq += 1
-	# release the fleet lock
-	print ( len(fleet),'in fleet,',len(ending_trips),'ending trips at',time.strftime("%b %d %Y %H:%M:%S") )
-	# store the trips which are ending
-	for some_trip in ending_trips:
-		if len(some_trip.vehicles) > 1:
-			some_trip.save()
-			# look for new route information with 10% probability
-			if getRoutes and random.random() < 0.1: 
-				fetch_route(some_trip.route_id)
-	# process the trips that are ending?
+				fleet[vehicleID].last_seen = report_time
+
+				closestStopID = vehicle['tripStatus']['closestStop'][2:]
+				tripDistance = vehicle['tripStatus']['distanceAlongTrip']
+				closestStopLat, closestStopLon = 0, 0
+				for stop in JSON['data']['references']['stops']:
+					if stop['id'] == closestStopID:
+						closestStopLat = stop['lat']
+						closestStopLon = stop['lon']
+
+				closestStop = Stop.new(int(closestStopID), closestStopLat, closestStopLon, report_time)
+				closestStopID = int(vehicle['tripStatus']['closestStop'][2:])
+				tripDistance = vehicle['tripStatus']['distanceAlongTrip']
+				stopOffset = vehicle['tripStatus']['closestStopTimeOffset']
+				closestStopLat, closestStopLon = 0, 0
+
+				for stop in JSON['data']['references']['stops']:
+					if stop['id'] == '3_' + str(closestStopID):
+						closestStopLat = stop['lat']
+						closestStopLon = stop['lon']
+
+				closestStop:Stop = Stop.new(closestStopID, closestStopLat, closestStopLon, report_time)
+
+				stopExists = 0
+				for timepoint in fleet[vehicleID].timepoints:
+					timepoint:TimePoint = timepoint
+					if closestStopID == int(timepoint.stop_id):
+						stopExists = 1
+						if timepoint.smallestOffset < abs(stopOffset):
+							timepoint.set_time(report_time + stopOffset*1000)
+							timepoint.arrival_time = report_time + stopOffset*1000
+							timepoint.smallestOffset = abs(stopOffset)
+							fleet[vehicleID].stops[len(fleet[vehicleID].stops)-1].report_time = report_time + stopOffset*1000
+							logging.info( msg = 'Refining time estimate for stop ' + str(closestStopID) + ' in Trip ' + str(fleet[vehicleID].trip_id) )
+						else: continue
+
+				if stopExists == 0:
+					fleet[vehicleID].timepoints.append( TimePoint.new( closestStop, tripDistance, 0, stopOffset ) )
+					fleet[vehicleID].stops.append( closestStop )
+					logger.info( msg = 'Adding Stop ' + str(closestStopID) + ' to Trip ' + str(fleet[vehicleID].trip_id) )
+				fleet[vehicleID].seq += 1
+	
+ 	# release the fleet lock
+	logger.info( str(len(fleet)) + ' in fleet and ' + str(len(ending_trips)) + ' ending trips')
+ 
+ 	# store the trips which are ending
+	for trip in ending_trips:
+		# to fix the running issue where the agency_id prefix doesn't get cut out correctly for some reason
+		if trip.trip_id[:2] == '3_':
+			trip.trip_id == trip.trip_id[2:]
+
+		logger.info(msg = 'Trip ' + trip.trip_id + ' has ended')
+
+		if len(trip.vehicles) > 1:
+			with requests.Session() as session:
+				retries = Retry( total=3, backoff_factor=1 )
+				session.mount( 'http://', HTTPAdapter(max_retries=retries) )
+				try: 
+					response_stops = session.get(
+						'http://api.pugetsound.onebusaway.org/api/where/trip-details/3_' + trip.trip_id + '.json', 
+						params={'key':API_KEY},
+						headers={'Accept-Encoding':'gzip, deflate'}, 
+						timeout=conf['OSRMserver']['timeout']
+					)
+				except:
+					logger.error(msg = 'Connection error fetching stops for trip ' + trip.trip_id)
+					return
+
+				JSON_TripDetails = json.loads(response_stops.text)
+				stops = JSON_TripDetails['data']['references']['stops']
+				logger.info( msg = 'Fetching ' + str(len(stops)) + ' stops for Trip ' + trip.trip_id)
+
+				for stop in stops:
+					try:	# some stops don't have a stop_Id / stop_code
+						stop_code = int(stop['code'])
+					except:
+						stop_code = -1
+						logger.warning(msg = str(stop['id']) + ' does not have a stop code, storing as -1')
+					# store the stop, (or ignore it if there is nothing new)
+					with record_check_lock:
+						logger.info(msg = 'Trying to save stop ' + stop['id'][2:] + ' to database')
+						db.try_storing_stop(
+							stop['id'],		# stop_id
+							stop['name'],	# stop_name
+							stop_code,					# stop_code # sometimes is missing!
+							stop['lon'], 
+							stop['lat']
+						)
+				# look for new route information with 10% probability
+				# if getRoutes:
+				# 	fetch_route(trip.route_id)
+
+			trip.save()
+			logger.info(msg = 'Saving Trip ' + trip.trip_id + ' to the database')
+		else:
+			logger.warning(msg = 'Trip ' + trip['id'] + ' did not have enough vehicles to save to database')
+	
+ 	# process the trips that are ending?
 	if doMatching:
-		for some_trip in ending_trips:
+		for trip in ending_trips:
 			# start each in it's own process
-			thread = threading.Thread(target=some_trip.process)
+			logger.info( msg = 'Processing trip ' + str( trip.trip_id ) )
+			thread = threading.Thread(target=trip.process)
 			thread.start()
-
-def fetch_route(route_id):
-	"""function for requesting and storing all relevant information 
-		about a given route. Hits the routeConfig command, parses the
-		results, and checks them against available information."""
-	# request routeConfig for this route
-	with requests.Session() as session:
-		retries = Retry( total=3, backoff_factor=1 )
-		session.mount( 'http://', HTTPAdapter(max_retries=retries) )
-		try: 
-			response = session.get(
-				'http://webservices.nextbus.com/service/publicXMLFeed', 
-				params={'command':'routeConfig','a':conf['agency'],'r':route_id,'verbose':''}, 
-				headers={'Accept-Encoding':'gzip, deflate'}, 
-				timeout=conf['OSRMserver']['timeout']
-			)
-		except:
-			print( 'connection error fetching route',route_id,'at',
-				time.strftime("%b %d %Y %H:%M:%S") )
-			return
-	# this is the whole big ol' parsed XML document
-	XML = ET.fromstring(response.text)
-	# get a list of all stops with locations and iterate over them
-	stops = XML.find('.//route').findall('./stop')
-	for stop in stops:
-		try:	# some stops don't have a stop_Id / stop_code
-			stop_code = int(stop.attrib['stopId'])
-		except:
-			stop_code = -1
-		# store the stop, (or ignore it if there is nothing new)
-		with record_check_lock:
-			db.try_storing_stop(
-				stop.attrib['tag'],		# stop_id
-				stop.attrib['title'],	# stop_name
-				stop_code,					# stop_code # sometimes is missing!
-				stop.attrib['lon'], 
-				stop.attrib['lat']
-			)
-	# get a list of "direction"s and iterate over them
-	directions = XML.find('.//route').findall('./direction')
-	for d in directions:
-		# get the ordered stops from this direction and store them
-		stops = d.findall('./stop')
-		ordered_stop_tags = []
-		for stop in stops:
-			 ordered_stop_tags.append( stop.attrib['tag'] )
-		# attempt to store the direction data
-		try: # may have missing tag
-			branch = d.attrib['branch']
-		except:
-			branch = ''
-		with record_check_lock:
-			db.try_storing_direction(
-				route_id,					# route_id
-				d.attrib['tag'],			# direction_id
-				d.attrib['title'],		# title
-				d.attrib['name'],			# name
-				branch,						# branch
-				d.attrib['useForUI'],	# useforui
-				ordered_stop_tags			# stops
-			)
-	with print_lock:
-		print( 'fetched route',route_id )
-
-def all_routes():
-	"""return a list of all available route tags"""
-	try:
-		response = requests.get(
-			'http://webservices.nextbus.com/service/publicXMLFeed', 
-			params={'command':'routeList','a':conf['agency']}, 
-			headers={'Accept-Encoding':'gzip, deflate'}, 
-			timeout=5
-		)
-	except:
-		print( 'connection error' )
-		return []
-	# this is the whole big ol' parsed XML document
-	XML = ET.fromstring(response.text)
-	routes = XML.findall('.//route')
-	# initialize list
-	routelist = []
-	# populate list
-	for route in routes:
-		routelist.append(route.attrib['tag'])
-	# returns a list of strings
-	return routelist
-
-
-
