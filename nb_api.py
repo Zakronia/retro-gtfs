@@ -23,7 +23,6 @@ doMatching = True
 
 # GLOBALS
 fleet = {} 			# operating vehicles in the ( fleet vid -> trip_obj )
-next_trip_id = db.new_trip_id()	# next trip_id to be assigned 
 next_bid = db.new_block_id()		# next block_id to be assigned
 last_update = 0	# last update from server, removed results already reported
 
@@ -37,7 +36,6 @@ def get_new_vehicles():
 		and send the trips for processing when it is determined that they 
 		have ended"""
 	global fleet
-	global next_trip_id
 	global next_bid
 	global last_update
 	# UNIX time the request was sent
@@ -160,8 +158,6 @@ def get_new_vehicles():
 					logger.info( msg = 'Adding Stop ' + str(closestStopID) + ' to Trip ' + str(fleet[vehicleID].trip_id) )
 				fleet[vehicleID].seq += 1
     
-				# increment the trip counter
-				next_trip_id += 1
 			else: # not a new trip, just add the vehicle
 				if len(fleet[vehicleID].waypoints) != 0 and report_time == fleet[vehicleID].waypoints[len(fleet[vehicleID].waypoints)-1]:
 					continue
@@ -256,9 +252,6 @@ def get_new_vehicles():
 							stop['lon'], 
 							stop['lat']
 						)
-				# look for new route information with 10% probability
-				# if getRoutes:
-				# 	fetch_route(trip.route_id)
 
 			trip.save()
 			logger.info(msg = 'Saving Trip ' + trip.trip_id + ' to the database')

@@ -68,12 +68,6 @@ class match(object):
 	def OSRM_match_is_sufficient(self):
 		"""Is this match good enough actually to be used?"""
 		return self.confidence >= conf['min_OSRM_match_quality']
-	@property
-	def confidence(self):
-		return self.confidence
-
-	def setConfidence(self, c):
-		self.confidence = c
 
 	@property
 	def is_useable(self):
@@ -92,12 +86,11 @@ class match(object):
 	@property
 	def confidence(self):
 		if self.OSRM_response['code'] != 'Ok':
-			self.confidence = self.OSRM_response['matchings']['confidence']
-			return
+			return self.OSRM_response['matchings']['confidence']
 		else:
 			# Get an average confidence value from the match result.
 			confidence_values = [ m['confidence'] for m in self.OSRM_response['matchings'] ]
-			self.confidence = mean( confidence_values )
+			return mean( confidence_values )
 
 	def query_OSRM(self):
 		"""Construct the request and send it to OSRM, retrying if necessary."""
@@ -133,13 +126,6 @@ class match(object):
 		# parse the result to a python object
 		self.OSRM_response = json.loads(raw_response.text)
 		# how confident should we be in this response?
-		if self.OSRM_response['code'] != 'Ok':
-			self.confidence = self.OSRM_response['matchings']['confidence']
-			return 
-		else:
-			# Get an average confidence value from the match result.
-			confidence_values = [ m['confidence'] for m in self.OSRM_response['matchings'] ]
-			self.confidence = mean( confidence_values )
 
 
 	def parse_OSRM_geometry(self):
@@ -343,5 +329,3 @@ class match(object):
 		# sort by measure ascending
 		final_timepoints = sorted(final_timepoints,key=lambda timepoint: timepoint.measure)
 		self.trip.timepoints = final_timepoints
-
-
