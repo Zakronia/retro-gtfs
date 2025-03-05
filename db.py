@@ -10,8 +10,9 @@ conn_string = (
 	"host='"+conf['db']['host']
 	+"' dbname='"+conf['db']['name']
 	+"' user='"+conf['db']['user']
-	+"' password='" + conf['db']['password']
+	+"' password='"+conf['db']['password']+"'"
 )
+
 connection = psycopg2.connect(conn_string)
 connection.autocommit = True
 
@@ -525,4 +526,3 @@ def trip_exists(trip_id):
 	)
 	(existence,) = c.fetchone()
 	return existence
-

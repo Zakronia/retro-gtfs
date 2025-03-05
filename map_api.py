@@ -1,11 +1,13 @@
 import requests
 from requests.adapters import HTTPAdapter
-from requests.packages.urllib3.util.retry import Retry
+from urllib3 import Retry
 import json, db
 from conf import conf
 from numpy import mean
-from shapely.geometry import MultiLineString, asShape
+from shapely.geometry import MultiLineString
+from shapely.geometry.geo import shape # note: changed asShape to shape
 from shapely.ops import transform as reproject
+from shapely.wkb import loads as loadWKB, dumps as dumpWKB
 from copy import copy
 from geom import cut
 from minor_objects import TimePoint
@@ -22,22 +24,27 @@ class match(object):
 	If we do use this match, this object also provides methods for associating 
 	points (vehicles, stops) with points along the route gemetry; these will 
 	be used for time interpolation inside the trip object."""
-
-	def __init__(self,trip_object):
-		# initialize some variables
-		self.trip = trip_object					# trip object that this is a match for
-		self.geometry = MultiLineString()	# MultiLineString shapely geom
+	
+	def __init__(self, trip_object):
+		self.geometry = MultiLineString()
+  		# initialize some variables
 		self.OSRM_response = {}					# python-parsed OSRM response object
-		self.confidence = 0						# 	
+		self.trip = trip_object
 		# error radius to use for map matching, same for all points
 		self.error_radius = conf['error_radius']
-		self.default_route_used = False;
+		self.default_route_used = False
+
 		# fire off a query to OSRM with the default parameters
+		print ('map_api_debug: running self.query_OSRM()')
 		self.query_OSRM()
+
 		if not self.OSRM_match_is_sufficient:
 			# try again with a larger error radius
+			print ('map_api_debug: match not sufficient, trying larger error radius')
 			self.error_radius *= 1.5
+			print ('map_api_debug: running self.query_OSRM()')
 			self.query_OSRM()
+
 		# still no good? 
 		if not self.OSRM_match_is_sufficient:
 			# Try a default geometry
@@ -46,18 +53,27 @@ class match(object):
 			else: 
 				return # bad match, no default
 		else: # have a workable OSRM match geometry
+			print ('map_api_debug: parsing OSRM geometry')
 			self.parse_OSRM_geometry()
 			self.locate_vehicles_on_OSRM_route()
+
 		if len(self.trip.vehicles) > 2:
+			print ('map_api_debug: locating stops on route')
 			self.locate_stops_on_route()
+		db.add_trip_match(self.trip.trip_id, self.confidence, dumpWKB( self.geometry, hex=True ))
 		# report on what happened
 		self.print_outcome()
-
 
 	@property
 	def OSRM_match_is_sufficient(self):
 		"""Is this match good enough actually to be used?"""
 		return self.confidence >= conf['min_OSRM_match_quality']
+	@property
+	def confidence(self):
+		return self.confidence
+
+	def setConfidence(self, c):
+		self.confidence = c
 
 	@property
 	def is_useable(self):
@@ -72,7 +88,16 @@ class match(object):
 			return False
 		# and only if we make it past all those conditions:
 		return True
-			
+	
+	@property
+	def confidence(self):
+		if self.OSRM_response['code'] != 'Ok':
+			self.confidence = self.OSRM_response['matchings']['confidence']
+			return
+		else:
+			# Get an average confidence value from the match result.
+			confidence_values = [ m['confidence'] for m in self.OSRM_response['matchings'] ]
+			self.confidence = mean( confidence_values )
 
 	def query_OSRM(self):
 		"""Construct the request and send it to OSRM, retrying if necessary."""
@@ -109,7 +134,7 @@ class match(object):
 		self.OSRM_response = json.loads(raw_response.text)
 		# how confident should we be in this response?
 		if self.OSRM_response['code'] != 'Ok':
-			self.confidence = 0
+			self.confidence = self.OSRM_response['matchings']['confidence']
 			return 
 		else:
 			# Get an average confidence value from the match result.
@@ -121,7 +146,7 @@ class match(object):
 		"""Parse the OSRM match geometry into a more useable format.
 			Specifically a simplified and projected MultiLineString."""
 		# get a list of lists of lat-lon coords which need to be reprojected
-		lines = [asShape(matching['geometry']) for matching in self.OSRM_response['matchings']]
+		lines = [shape(matching['geometry']) for matching in self.OSRM_response['matchings']] # note: changed asShape to shape
 		multilines = MultiLineString(lines)
 		# reproject to local 
 		local_multilines = reproject( conf['projection'], multilines )
