@@ -12,10 +12,10 @@ def cut(lines, distance):
 	elif distance >= lines.length:
 		return ( lines, MultiLineString() )
 	# convert the multi-lines into a list of lines
-	lines_list = [ line for line in lines ]
+	lines_list = list(lines.geoms)
 	cum_dist = 0
 	lines_so_far = []
-	for li, line in enumerate(lines):
+	for li, line in enumerate(lines.geoms):
 		coords = list(line.coords)
 		# iterate over the points
 		for ci in range(1,len(coords)):

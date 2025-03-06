@@ -120,6 +120,8 @@ def get_new_vehicles():
     
 				closestStopID = vehicle['tripStatus']['closestStop'][2:]
 				tripDistance = vehicle['tripStatus']['distanceAlongTrip']
+				stopOffset = vehicle['tripStatus']['closestStopTimeOffset']
+
 				closestStopLat, closestStopLon = 0, 0
 				for stop in JSON['data']['references']['stops']:
 					if stop['id'] == closestStopID:
@@ -127,37 +129,10 @@ def get_new_vehicles():
 						closestStopLon = stop['lon']
 
 				closestStop = Stop.new(int(closestStopID), closestStopLat, closestStopLon, report_time)
-				closestStopID = int(vehicle['tripStatus']['closestStop'][2:])
-				tripDistance = vehicle['tripStatus']['distanceAlongTrip']
-				stopOffset = vehicle['tripStatus']['closestStopTimeOffset']
-				closestStopLat, closestStopLon = 0, 0
 
-				for stop in JSON['data']['references']['stops']:
-					if stop['id'] == '3_' + str(closestStopID):
-						closestStopLat = stop['lat']
-						closestStopLon = stop['lon']
-
-				closestStop:Stop = Stop.new(closestStopID, closestStopLat, closestStopLon, report_time)
-
-				stopExists = 0
-				for timepoint in fleet[vehicleID].timepoints:
-					timepoint:TimePoint = timepoint
-					if closestStopID == int(timepoint.stop_id):
-						stopExists = 1
-						if timepoint.smallestOffset < abs(stopOffset):
-							timepoint.arrival_time = report_time + stopOffset*1000
-							timepoint.set_time(report_time + stopOffset*1000)
-							timepoint.smallestOffset = abs(stopOffset)
-							fleet[vehicleID].stops[len(fleet[vehicleID].stops)-1].report_time = report_time + stopOffset*1000
-							logging.info( msg = 'Refining time estimate for stop ' + str(closestStopID) + ' in Trip ' + str(fleet[vehicleID].trip_id) )
-						else: continue
-
-				if stopExists == 0:
-					fleet[vehicleID].timepoints.append( TimePoint.new( closestStop, tripDistance, 0, stopOffset ) )
-					fleet[vehicleID].stops.append( closestStop )
-					logger.info( msg = 'Adding Stop ' + str(closestStopID) + ' to Trip ' + str(fleet[vehicleID].trip_id) )
-				fleet[vehicleID].seq += 1
-    
+				if fleet[vehicleID].add_timepoint( closestStop, tripDistance, 5, stopOffset):
+					logging.info( msg = 'Refining time estimate for stop ' + str(closestStopID) + ' in Trip ' + str(fleet[vehicleID].trip_id) )
+				else: logger.info( msg = 'Adding Stop ' + str(closestStopID) + ' to Trip ' + str(fleet[vehicleID].trip_id) )
 			else: # not a new trip, just add the vehicle
 				if len(fleet[vehicleID].waypoints) != 0 and report_time == fleet[vehicleID].waypoints[len(fleet[vehicleID].waypoints)-1]:
 					continue
@@ -168,6 +143,8 @@ def get_new_vehicles():
 
 				closestStopID = vehicle['tripStatus']['closestStop'][2:]
 				tripDistance = vehicle['tripStatus']['distanceAlongTrip']
+				stopOffset = vehicle['tripStatus']['closestStopTimeOffset']
+
 				closestStopLat, closestStopLon = 0, 0
 				for stop in JSON['data']['references']['stops']:
 					if stop['id'] == closestStopID:
@@ -175,37 +152,10 @@ def get_new_vehicles():
 						closestStopLon = stop['lon']
 
 				closestStop = Stop.new(int(closestStopID), closestStopLat, closestStopLon, report_time)
-				closestStopID = int(vehicle['tripStatus']['closestStop'][2:])
-				tripDistance = vehicle['tripStatus']['distanceAlongTrip']
-				stopOffset = vehicle['tripStatus']['closestStopTimeOffset']
-				closestStopLat, closestStopLon = 0, 0
 
-				for stop in JSON['data']['references']['stops']:
-					if stop['id'] == '3_' + str(closestStopID):
-						closestStopLat = stop['lat']
-						closestStopLon = stop['lon']
-
-				closestStop:Stop = Stop.new(closestStopID, closestStopLat, closestStopLon, report_time)
-
-				stopExists = 0
-				for timepoint in fleet[vehicleID].timepoints:
-					timepoint:TimePoint = timepoint
-					if closestStopID == int(timepoint.stop_id):
-						stopExists = 1
-						if timepoint.smallestOffset < abs(stopOffset):
-							timepoint.set_time(report_time + stopOffset*1000)
-							timepoint.arrival_time = report_time + stopOffset*1000
-							timepoint.smallestOffset = abs(stopOffset)
-							fleet[vehicleID].stops[len(fleet[vehicleID].stops)-1].report_time = report_time + stopOffset*1000
-							logging.info( msg = 'Refining time estimate for stop ' + str(closestStopID) + ' in Trip ' + str(fleet[vehicleID].trip_id) )
-						else: continue
-
-				if stopExists == 0:
-					fleet[vehicleID].timepoints.append( TimePoint.new( closestStop, tripDistance, 0, stopOffset ) )
-					fleet[vehicleID].stops.append( closestStop )
-					logger.info( msg = 'Adding Stop ' + str(closestStopID) + ' to Trip ' + str(fleet[vehicleID].trip_id) )
-				fleet[vehicleID].seq += 1
-	
+				if fleet[vehicleID].add_timepoint( closestStop, tripDistance, 5, stopOffset):
+					logging.info( msg = 'Refining time estimate for stop ' + str(closestStopID) + ' in Trip ' + str(fleet[vehicleID].trip_id) )
+				else: logger.info( msg = 'Adding Stop ' + str(closestStopID) + ' to Trip ' + str(fleet[vehicleID].trip_id) )	
  	# release the fleet lock
 	logger.info( str(len(fleet)) + ' in fleet and ' + str(len(ending_trips)) + ' ending trips')
  

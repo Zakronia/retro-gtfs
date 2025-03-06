@@ -52,7 +52,7 @@ class Trip(object):
 		Trip.route_id = route_id
 		Trip.vehicle_id = vehicle_id
 		Trip.last_seen = last_seen
-		Trip.timepoints = []
+		# Trip.timepoints = []
 		# return the new object
 		return Trip
 
@@ -106,7 +106,7 @@ class Trip(object):
 		db.scrub_trip(self.trip_id)
 
 		# see if we have enough stuff to bother with
-		if len(self.vehicles) < 3: # km
+		if len(self.vehicles) < 3:
 			return db.ignore_trip(self.trip_id,'too few vehicles')
 
 		# calculate vector of segment speeds
@@ -174,7 +174,6 @@ class Trip(object):
 			the spatial accuracy of the trip. Get the location/measure of stops 
 			and vehicles along the path."""
 		# create a match object, passing it this trip to get it started
-		self.match = map_api.match(self)
 		try:
 			self.match = map_api.match(self)
 			print("Contacting OSRM server")
@@ -319,3 +318,23 @@ class Trip(object):
 					return t1 + additional_time
 				# create the segment for the next iteration
 				m1,t1 = m2,t2
+    
+    
+	def add_timepoint(self,stop,measure,offset):
+		stopExists = 0
+		self.seq += 1
+		for timepoint in self.timepoints:
+			timepoint:TimePoint = timepoint
+			if int(stop.id) == int(timepoint.stop_id):
+				stopExists = 1
+				if timepoint.smallestOffset < abs(offset):
+					timepoint.arrival_time = stop.report_time + offset*1000
+					timepoint.smallestOffset = abs(offset)
+					self.stops[len(self.stops)-1].report_time += offset*1000
+					return True
+				else: continue
+
+		if stopExists == 0:
+			self.timepoints.append( TimePoint.new( stop, measure, 5, offset ) )
+			self.stops.append( stop )
+			return False

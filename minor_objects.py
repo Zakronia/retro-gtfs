@@ -77,6 +77,9 @@ class Stop(object):
 	def getID(self):
 		return self.id
 
+	@property
+	def geom(self):
+		return Point(self.lon, self.lat)
 
 class TimePoint(object):
 	"""A stop in sequence."""
