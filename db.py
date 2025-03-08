@@ -201,7 +201,16 @@ def insert_trip(trip_id,block_id,route_id,direction_id,vehicle_id,times,orig_geo
 			'localEPSG':conf['localEPSG']
 		}
 	)
-
+ 
+def remove_trip(trip_id):
+	"""Remove a trip from the database"""
+	c = cursor()
+	c.execute(
+		"""
+			DELETE FROM {trips}
+			WHERE trip_id="%(trip_id)s"
+		"""
+	)
 
 def get_direction_uid(direction_id,trip_time):
 	"""Find the correct direction entry based on the direction_id and the time
@@ -324,7 +333,7 @@ def get_timepoints(trip_id):
 	"""Essentially, this should be the inverse of the above function."""
 	c = cursor()
 	c.execute("""
-		SELECT stop_id, etime, stop_sequence
+		SELECT stop_uid, etime, stop_sequence
 		FROM {stop_times}
 		WHERE trip_id = %(trip_id)s
 		ORDER BY stop_sequence

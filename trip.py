@@ -323,6 +323,7 @@ class Trip(object):
 	def add_timepoint(self,stop,measure,offset):
 		stopExists = 0
 		self.seq += 1
+		print ( ' There are currently ' + str( len( self.timepoints) ) + ' timepoints within Trip ' + str( self.trip_id ) )
 		for timepoint in self.timepoints:
 			timepoint:TimePoint = timepoint
 			if int(stop.id) == int(timepoint.stop_id):

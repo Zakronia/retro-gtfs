@@ -87,8 +87,8 @@ class TimePoint(object):
 	@classmethod 
 	def __init__(self):
 		self.stop:Stop = None
-		self.measure:int = None
-		self.dist = None
+		self.measure:int = 0
+		self.dist = 0
 		self.smallestOffset:int = None
 		self.arrival_time = None
  
