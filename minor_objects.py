@@ -93,13 +93,13 @@ class TimePoint(object):
 		self.arrival_time = None
  
 	@classmethod
-	def new( self, stop_object_reference, measure, distance_from_route, offset ):
+	def new( self, stop_object_reference, time, measure, distance_from_route, offset ):
 		TimePoint = self()
 		TimePoint.stop = stop_object_reference	# Stop object
 		TimePoint.measure = measure					# meters along route
 		TimePoint.dist = distance_from_route		# meters distant from route
 		TimePoint.smallestOffset = offset
-		TimePoint.arrival_time = 0
+		TimePoint.arrival_time = time
 		return TimePoint
 	
 	@property

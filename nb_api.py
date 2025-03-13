@@ -203,8 +203,12 @@ def get_new_vehicles():
 							stop['lat']
 						)
 
-			trip.save()
-			logger.info(msg = 'Saving Trip ' + trip.trip_id + ' to the database')
+			if trip.save():
+				logger.info(msg = 'Trip ' + str(trip.trip_id) + ' is already in the database. Merging records.')
+				for timepoint in db.get_timepoints(trip.trip_id):
+					trip.add_timepoint( timepoint.stop, timepoint.measure, timepoint.smallestOffset )
+			else:
+				logger.info(msg = 'Saving Trip ' + trip.trip_id + ' to the database')
 		else:
 			logger.warning(msg = 'Trip ' + trip['id'] + ' did not have enough vehicles to save to database')
 	
@@ -212,16 +216,6 @@ def get_new_vehicles():
 	if doMatching:
 		for trip in ending_trips:
 			# first check that the trip doesn't already exist in the database
-			if db.trip_exists(trip.trip_id):
-				logger.info(msg = 'Trip ' + str(trip.trip_id) + ' is already in the database. Merging records.')
-				oldTrip = Trip.fromDB(trip.trip_id)
-				oldTrip.timepoints = db.get_timepoints(trip.trip_id)
-				
-
-				for timepoint in trip.timepoints:
-					oldTrip.add_timepoint( timepoint.stop, timepoint.measure,timepoint.smallestOffset )
-
-				db.remove_trip(oldTrip.trip_id)
 			# start each in it's own process
 			logger.info( msg = 'Processing trip ' + str( trip.trip_id ) )
 			thread = threading.Thread(target=trip.process)

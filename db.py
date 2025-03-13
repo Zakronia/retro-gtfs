@@ -1,5 +1,6 @@
 # functions involving BD interaction
 import psycopg2, json, math
+from psycopg2.extras import execute_values
 from conf import conf
 from shapely.wkb import loads as loadWKB
 from minor_objects import Stop, Vehicle
@@ -166,6 +167,22 @@ def add_trip_match(trip_id,confidence,wkb_geometry_match):
 def insert_trip(trip_id,block_id,route_id,direction_id,vehicle_id,times,orig_geom):
 	"""Store the basics of the trip in the database."""
 	c = cursor()
+ 
+	c.execute(
+		"""
+			SELECT * 
+			FROM {trips}
+			WHERE 
+				trip_id = %(trip_id)s
+		""".format(**conf['db']['tables']),
+		{
+			'trip_id':trip_id
+		}
+	)
+ 
+	if c.rowcount > 0:
+		return True
+
 	# store the given values
 	c.execute(
 		"""
@@ -315,19 +332,27 @@ def get_trip_problem(trip_id):
 
 def store_timepoints(trip_id,timepoints):
 	"""store the estimated stop times for a trip"""
-	assert len(timepoints) > 1
+	assert len(timepoints) > 1 
 	c = cursor()
 	# be sure the timepoints are in ascending temporal order
 	# timepoints = sorted(timepoints,key=lambda tp: tp.arrival_time) 
 	# insert the stops
+ 
+ 
 	records = []
 	seq = 1
 	for timepoint in timepoints:
 		# list of tuples
 		records.append( (trip_id,timepoint.stop.id,timepoint.arrival_time,seq) )
 		seq += 1
-	args_str = ','.join( [ "({},{},{},{})".format(*x) for x in records ] )
-	c.execute("INSERT INTO {stop_times} (trip_id, stop_uid, etime, stop_sequence) VALUES ".format(**conf['db']['tables']) + args_str)
+	print ( 'timepoints to store: ' + str(len(timepoints)))
+	execute_values(
+		c,
+		"""
+			INSERT INTO {stop_times} (trip_id, stop_uid, etime, stop_sequence) VALUES %s
+		""".format(**conf['db']['tables']),
+		records
+	)
 
 
 def get_timepoints(trip_id):
@@ -528,11 +553,15 @@ def trip_exists(trip_id):
 	"""Check whether a trip exists in the database, 
 		returning boolean."""
 	c = cursor()
+	print ('Checking trip ' + str(trip_id) + ' in the database')
 	c.execute(
-		"""
-			SELECT EXISTS (SELECT * FROM {trips} WHERE trip_id = %(trip_id)s)
-		""".format(**conf['db']['tables']),
-		{ 'trip_id':trip_id }
-	)
-	(existence,) = c.fetchone()
-	return existence
+    	"""
+    		SELECT EXISTS (SELECT trip_id FROM {trips} WHERE trip_id = %(trip_id)s)
+    	""".format(**conf['db']['tables']), { 'trip_id':trip_id }
+    )
+	print ('rowcount: ' + str(c.rowcount))
+	print (str(c.fetchone))
+	if c.rowcount > 1:
+		return True
+	else:
+		return False

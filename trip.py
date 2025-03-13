@@ -52,7 +52,7 @@ class Trip(object):
 		Trip.route_id = route_id
 		Trip.vehicle_id = vehicle_id
 		Trip.last_seen = last_seen
-		# Trip.timepoints = []
+		Trip.timepoints = []
 		# return the new object
 		return Trip
 
@@ -88,7 +88,7 @@ class Trip(object):
 			data, etc. GPS points are stored as an array of times and 
 			a linestring. This function is to be called just before 
 			process() as data is being collected."""
-		db.insert_trip(
+		try: db.insert_trip(
 			self.trip_id,
 			self.block_id,
 			self.route_id, 
@@ -97,6 +97,9 @@ class Trip(object):
 			[ v.time for v in self.vehicles ],
 			dumpWKB( self.get_geom(), hex=True )
 		)
+		except:
+			return True
+			
 
 
 	def process(self):
@@ -107,24 +110,19 @@ class Trip(object):
 
 		# see if we have enough stuff to bother with
 		if len(self.vehicles) < 3:
+			print ('trip has too few vehicles')
 			return db.ignore_trip(self.trip_id,'too few vehicles')
 
 		# calculate vector of segment speeds
 		self.segment_speeds = self.get_segment_speeds()
 
 		# check for very short trips
-		if self.length < 0.25: # km
+		if self.length < 0.1: # km
+			print ('trip is too short')
 			return db.ignore_trip(self.trip_id,'too short')
 
-		# check for errors and attempt to correct them
-		# while self.has_errors():
-			# make sure it's still long enough to bother with
-			if len(self.vehicles) < 5:
-				return db.ignore_trip(self.trip_id,'processing made too short')
-			# still long enough to try fixing
-			self.fix_error()
-			# update the segment speeds for the next iteration
-			self.segment_speeds = self.get_segment_speeds()
+		print ( 'Trying to store ' + str(len(self.timepoints)) + ' timepoints in trip '  + str(self.trip_id) )
+		db.store_timepoints(self.trip_id,self.timepoints)
 
 		# trip is clean, so store the cleaned line 
 		db.set_trip_clean_geom(
@@ -132,16 +130,8 @@ class Trip(object):
 			dumpWKB( self.get_geom(), hex=True )
 		)
 
-		# get the stops (as a list of Stop objects)
-		# self.stops = db.get_stops(self.direction_id,self.last_seen)
-
 		# and begin matching
 		self.map_match_trip()
-
-		# if not self.match.is_useable:
-		# 	return db.ignore_trip(self.trip_id,'match problem')
-
-		self.interpolate_stop_times()
 
 
 	def get_geom(self):
@@ -189,6 +179,7 @@ class Trip(object):
 		# for timepoint in self.timepoints:
 		# 	timepoint.set_time( self.interpolate_time(timepoint.measure) )
 		# store the stop times
+		print ( ' Interpolating stop times for ' + str(self.trip_id) + ' using ' + str(len(self.timepoints)) + ' timepoints')
 		db.store_timepoints(self.trip_id,self.timepoints)
 
 
@@ -336,6 +327,6 @@ class Trip(object):
 				else: continue
 
 		if stopExists == 0:
-			self.timepoints.append( TimePoint.new( stop, measure, 5, offset ) )
+			self.timepoints.append( TimePoint.new( stop, stop.report_time, measure, 5, offset ) )
 			self.stops.append( stop )
 			return False
