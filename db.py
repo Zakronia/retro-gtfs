@@ -207,10 +207,11 @@ def remove_trip(trip_id):
 	c = cursor()
 	c.execute(
 		"""
-			DELETE FROM {trips}
-			WHERE trip_id="%(trip_id)s"
-		"""
+			DELETE FROM {trips} WHERE trip_id = %(trip_id)s;
+		""".format(**conf['db']['tables']),
+		{ 'trip_id':trip_id }
 	)
+
 
 def get_direction_uid(direction_id,trip_time):
 	"""Find the correct direction entry based on the direction_id and the time
