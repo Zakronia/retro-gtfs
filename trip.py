@@ -313,24 +313,24 @@ class Trip(object):
     
     
 	def add_timepoint(self,stop,measure,offset):
-		stopExists = 0
+		status = 0
 		self.seq += 1
-		# print ( ' There are currently ' + str( len( self.timepoints) ) + ' timepoints within Trip ' + str( self.trip_id ) )
-		for timepoint in self.timepoints:
-			timepoint:TimePoint = timepoint
-			if int(stop.id) == int(timepoint.stop_id):
-				stopExists = 1
-				if timepoint.smallestOffset < abs(offset):
-					timepoint.arrival_time = stop.report_time + offset*1000
+		if len(self.timepoints) > 0:
+			timepoint = self.timepoints[len(self.timepoints) - 1]
+			if int(self.timepoints[len(self.timepoints) - 2].stop_id) == int(timepoint.stop_id):
+				status = 1 # a stop has been found
+				if timepoint.smallestOffset > abs(offset):
 					timepoint.smallestOffset = abs(offset)
+					timepoint.arrival_time = stop.report_time + offset*1000
 					self.stops[len(self.stops)-1].report_time += offset*1000
-					return True
-				else: continue
+					return status # means timepoint updated
+				else: 
+					return
 
-		if stopExists == 0:
+		if status == 0: # stop was not found so create a new one
 			if len(self.timepoints) > 0:
 				db.try_storing_timepoint(self.timepoints[len(self.timepoints) - 1], self.trip_id, self.stop_num)
 			self.stop_num += 1
 			self.timepoints.append( TimePoint.new( stop, stop.report_time, measure, 5, offset ) )
 			self.stops.append( stop )
-			return False
+			return status # means new timepoint created

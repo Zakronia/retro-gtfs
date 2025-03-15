@@ -130,9 +130,12 @@ def get_new_vehicles():
 
 				closestStop = Stop.new(int(closestStopID), closestStopLat, closestStopLon, report_time)
 
-				if fleet[vehicleID].add_timepoint(closestStop, tripDistance, stopOffset):
-					logging.info( msg = 'Refining time estimate for stop ' + str(closestStopID) + ' in Trip ' + str(fleet[vehicleID].trip_id) )
-				else: logger.info( msg = 'Adding Stop ' + str(closestStopID) + ' to Trip ' + str(fleet[vehicleID].trip_id) )
+				status = fleet[vehicleID].add_timepoint(closestStop, tripDistance, stopOffset) == 1
+				if status == 1:
+					logger.info( msg = 'Adding Stop ' + str(closestStopID) + ' to Trip ' + str(fleet[vehicleID].trip_id) )
+					logger.info (msg = 'Storing Stop Time to database for Stop ' + str(closestStopID) + ' in Trip ' + str(fleet[vehicleID].trip_id) + ' at time ' + str(report_time) )
+				if status == 0:
+					logging.info( msg = 'Refining time estimate for stop ' + str(closestStopID) + ' in Trip ' + str(fleet[vehicleID].trip_id) )	
 			else: # not a new trip, just add the vehicle
 				if len(fleet[vehicleID].waypoints) != 0 and report_time == fleet[vehicleID].waypoints[len(fleet[vehicleID].waypoints)-1]:
 					continue
@@ -152,10 +155,12 @@ def get_new_vehicles():
 						closestStopLon = stop['lon']
 
 				closestStop = Stop.new(int(closestStopID), closestStopLat, closestStopLon, report_time)
-
-				if fleet[vehicleID].add_timepoint(closestStop, tripDistance, stopOffset):
-					logging.info( msg = 'Refining time estimate for stop ' + str(closestStopID) + ' in Trip ' + str(fleet[vehicleID].trip_id) )
-				else: logger.info( msg = 'Adding Stop ' + str(closestStopID) + ' to Trip ' + str(fleet[vehicleID].trip_id) )	
+				status = fleet[vehicleID].add_timepoint(closestStop, tripDistance, stopOffset) == 1
+				if status == 1:
+					logger.info( msg = 'Adding Stop ' + str(closestStopID) + ' to Trip ' + str(fleet[vehicleID].trip_id) )
+					logger.info (msg = 'Storing Stop Time to database for Stop ' + str(closestStopID) + ' in Trip ' + str(fleet[vehicleID].trip_id) + ' at time ' + str(report_time) )
+				if status == 0:
+					logging.info( msg = 'Refining time estimate for stop ' + str(closestStopID) + ' in Trip ' + str(fleet[vehicleID].trip_id) )	
  	# release the fleet lock
 	logger.info( str(len(fleet)) + ' in fleet and ' + str(len(ending_trips)) + ' ending trips')
  
