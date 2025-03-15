@@ -28,6 +28,7 @@ class Trip(object):
 		self.last_seen = -1			# last vehicle report (epoch time)
 		# initialize sequence
 		self.seq = 1					# sequence which increments at each vehicle report
+		self.stop_num = 0
 		# declare several vars for later in the matching process
 		self.speed_string = ""		# str for error cleaning
 		self.segment_speeds = []	# reported speeds of all segments (error cleaning)
@@ -121,8 +122,8 @@ class Trip(object):
 			print ('trip is too short')
 			return db.ignore_trip(self.trip_id,'too short')
 
-		print ( 'Trying to store ' + str(len(self.timepoints)) + ' timepoints in trip '  + str(self.trip_id) )
-		db.store_timepoints(self.trip_id,self.timepoints)
+		# print ( 'Trying to store ' + str(len(self.timepoints)) + ' timepoints in trip '  + str(self.trip_id) )
+		# db.store_timepoints(self.trip_id,self.timepoints)
 
 		# trip is clean, so store the cleaned line 
 		db.set_trip_clean_geom(
@@ -314,7 +315,7 @@ class Trip(object):
 	def add_timepoint(self,stop,measure,offset):
 		stopExists = 0
 		self.seq += 1
-		print ( ' There are currently ' + str( len( self.timepoints) ) + ' timepoints within Trip ' + str( self.trip_id ) )
+		# print ( ' There are currently ' + str( len( self.timepoints) ) + ' timepoints within Trip ' + str( self.trip_id ) )
 		for timepoint in self.timepoints:
 			timepoint:TimePoint = timepoint
 			if int(stop.id) == int(timepoint.stop_id):
@@ -327,6 +328,9 @@ class Trip(object):
 				else: continue
 
 		if stopExists == 0:
+			if len(self.timepoints) > 0:
+				db.try_storing_timepoint(self.timepoints[len(self.timepoints) - 1], self.trip_id, self.stop_num)
+			self.stop_num += 1
 			self.timepoints.append( TimePoint.new( stop, stop.report_time, measure, 5, offset ) )
 			self.stops.append( stop )
 			return False

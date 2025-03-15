@@ -354,7 +354,6 @@ def store_timepoints(trip_id,timepoints):
 		records
 	)
 
-
 def get_timepoints(trip_id):
 	"""Essentially, this should be the inverse of the above function."""
 	c = cursor()
@@ -421,6 +420,46 @@ def try_storing_stop(stop_id,stop_name,stop_code,lon,lat):
 				'lat':lat,
 				'localEPSG':conf['localEPSG']
 			} )
+ 
+def try_storing_timepoint(timepoint, trip_id, seq):
+	""""""
+	c = cursor()
+	# see if precisely this record already exists
+	c.execute(
+		"""
+			SELECT * 
+			FROM {stop_times}
+			WHERE 
+				trip_id = %(trip_id)s AND
+				stop_uid = %(stop_uid)s AND
+				etime = %(etime)s
+		""".format(**conf['db']['tables']),
+		{
+			'trip_id':trip_id,
+			'stop_uid':timepoint.stop_id,
+			'etime':timepoint.arrival_time
+		}
+	)
+	# if any result, we already have this timepoint stored
+	if c.rowcount > 0:
+		return
+	# store the stop
+	print ( 'Storing timepoint. Stop: ' + str(timepoint.stop_id) + ', Trip: ' + str(trip_id) + ', Time: ' + str(timepoint.arrival_time) )
+	c.execute(
+		"""
+			INSERT INTO {stop_times} ( 
+				trip_id, stop_uid, stop_sequence, etime
+			) 
+			VALUES ( 
+				%(trip_id)s, %(stop_uid)s, %(stop_sequence)s, %(etime)s
+			)""".format(**conf['db']['tables']),
+			{ 
+				'trip_id':trip_id,
+				'stop_uid':timepoint.stop_id,
+				'stop_sequence':seq,
+				'etime':timepoint.arrival_time
+			} 
+	)
 
 
 def try_storing_direction(route_id,did,title,name,branch,useforui,stops):
