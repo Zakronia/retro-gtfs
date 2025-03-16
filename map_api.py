@@ -41,7 +41,7 @@ class match(object):
 		if not self.OSRM_match_is_sufficient:
 			# try again with a larger error radius
 			print ('map_api_debug: match not sufficient, trying larger error radius')
-			self.error_radius *= 1.5
+			self.error_radius *= 2
 			print ('map_api_debug: running self.query_OSRM()')
 			self.query_OSRM()
 

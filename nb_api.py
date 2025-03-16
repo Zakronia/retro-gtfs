@@ -64,16 +64,15 @@ def get_new_vehicles():
 	JSON = json.loads(response.text)
 	vehicles = JSON['data']['list']
  
-	# get values from the XML
-	## last_update = int(XML.find('./lastTime').attrib['time'])
+	# get values from the JSONs
 	last_update = JSON['currentTime']
  
 	# prevent simulataneous editing
 	with fleet_lock:
 		# check to see if there's anything we just haven't heard from at all lately
 		for vehicleID in list(fleet.keys()):
-			# if it's been more than 30 minutes
-			if server_time - fleet[vehicleID].last_seen > 1800:
+			# if it's been more than 15 minutes
+			if last_update - fleet[vehicleID].last_seen > 900*1000:
 				# it has ended
 				ending_trips.append(fleet[vehicleID])
 				del fleet[vehicleID]
@@ -87,7 +86,7 @@ def get_new_vehicles():
 			vehicleID, tripID = vehicle['vehicleId'][2:], vehicle['tripId'][2:]
 			lon = float( vehicle[ 'location' ][ 'lon' ] )
 			lat = float( vehicle[ 'location' ][ 'lat' ] )
-
+   
 			# iterate through each of the reference trips to find the one we need.
 			# not very efficient, but means we don't have to send a metric shit ton of API requests
 			trips = JSON['data']['references']['trips']
@@ -109,6 +108,11 @@ def get_new_vehicles():
 				continue
 			# we have a record for this vehicle, and it's been heard from recently
 			# see if anything else has changed that makes this a new trip
+			if last_update - fleet[vehicleID].last_seen > 900*1000:
+				print (' Trip ' + str(fleet[vehicleID].trip_id) + ' is ending')
+				ending_trips.append(fleet[vehicleID])
+				del fleet[vehicleID]
+				continue
 			if ( fleet[vehicleID].route_id != routeID or fleet[vehicleID].direction_id != directionID ):
 				# this trip is ending
 				ending_trips.append( fleet[vehicleID] )
@@ -131,11 +135,11 @@ def get_new_vehicles():
 				closestStop = Stop.new(int(closestStopID), closestStopLat, closestStopLon, report_time)
 
 				status = fleet[vehicleID].add_timepoint(closestStop, tripDistance, stopOffset) == 1
-				if status == 1:
+				if status == 0:
 					logger.info( msg = 'Adding Stop ' + str(closestStopID) + ' to Trip ' + str(fleet[vehicleID].trip_id) )
 					logger.info (msg = 'Storing Stop Time to database for Stop ' + str(closestStopID) + ' in Trip ' + str(fleet[vehicleID].trip_id) + ' at time ' + str(report_time) )
-				if status == 0:
-					logging.info( msg = 'Refining time estimate for stop ' + str(closestStopID) + ' in Trip ' + str(fleet[vehicleID].trip_id) )	
+				if status == 1:
+					logging.info( msg = 'Refining time estimate for stop ' + str(fleet[vehicleID].timepoints[ len(fleet[vehicleID].timepoints) - 2].stop_id) + ' in Trip ' + str(fleet[vehicleID].trip_id) )	
 			else: # not a new trip, just add the vehicle
 				if len(fleet[vehicleID].waypoints) != 0 and report_time == fleet[vehicleID].waypoints[len(fleet[vehicleID].waypoints)-1]:
 					continue
@@ -215,7 +219,7 @@ def get_new_vehicles():
 			else:
 				logger.info(msg = 'Saving Trip ' + trip.trip_id + ' to the database')
 		else:
-			logger.warning(msg = 'Trip ' + trip['id'] + ' did not have enough vehicles to save to database')
+			logger.warning(msg = 'Trip ' + trip.trip_id + ' did not have enough vehicles to save to database')
 	
  	# process the trips that are ending?
 	if doMatching:
